@@ -621,6 +621,7 @@ def ask(session_id: str, payload: SessionAskRequest) -> dict[str, Any]:
     state.touch()
 
     tool_result = _maybe_handle_directive_tool_call(state=state, transcript=transcript)
+    active_tool_state: dict[str, Any] | None = None
     if tool_result is not None:
         answer_text = tool_result['answer']
         citations = tool_result.get('citations') or []
@@ -628,6 +629,7 @@ def ask(session_id: str, payload: SessionAskRequest) -> dict[str, Any]:
             'last_tool_result': tool_result,
             'last_tool_at': datetime.now(timezone.utc).isoformat(),
         }
+        active_tool_state = state.tool_state
     else:
         answer_payload = _post_json(
             f'{API_BASE_URL}/api/sessions/{session_id}/ask',
@@ -657,22 +659,38 @@ def ask(session_id: str, payload: SessionAskRequest) -> dict[str, Any]:
         'tool_manifest': state.tool_manifest,
         'pipecat_plan': state.pipecat_plan,
         'agent_status': state.agent_status,
+        'tool_state': active_tool_state,
     }
 
 
 @app.post('/sessions/{session_id}/disconnect')
-def disconnect(session_id: str) -> dict[str, Any]:
+async def disconnect(session_id: str) -> dict[str, Any]:
+    live = LIVE_SESSIONS.get(session_id)
+    live_payload: dict[str, Any] | None = None
+    if live:
+        try:
+            await _stop_live_runtime(live)
+        except Exception:
+            pass
+        live.transport_ready = False
+        live.state = 'ended'
+        live.add_event('logical_session_disconnected')
+        live_payload = _serialize_live_session(live)
+        LIVE_SESSIONS.pop(session_id, None)
+
     state = SESSIONS.get(session_id)
     if state:
         state.connected = False
         state.status = 'disconnected'
         state.agent_status = 'disconnected'
+        state.live_session = {}
         state.frontend_contract = _build_agent_contract(state)
         state.touch()
     return {
         'status': 'disconnected',
         'sessionId': session_id,
         'connected': False,
+        'live': live_payload,
     }
 
 
@@ -899,6 +917,31 @@ def _last_slide_index_from_contract(contract: dict[str, Any]) -> int | None:
     return None
 
 
+def _is_next_slide_directive(lowered: str) -> bool:
+    """Detect spoken requests that imply the visible slide should advance before discussion."""
+    normalized = lowered.replace('-', ' ')
+    explicit_next_phrases = [
+        'next slide',
+        'go next',
+        'move on',
+        'move forward',
+        'continue to the next slide',
+        'move to the next slide',
+        'advance the slide',
+        'advance to the next slide',
+        'proceed to the next slide',
+        "let's continue",
+        "let's move on",
+        "let us continue",
+        "let us move on",
+    ]
+    if any(phrase in normalized for phrase in explicit_next_phrases):
+        return True
+
+    discussion_verbs = ['talk about', 'tell me about', "what's on", 'what is on', 'present', 'show me']
+    return any(verb in normalized for verb in discussion_verbs) and 'next' in normalized and 'slide' in normalized
+
+
 def _maybe_handle_directive_tool_call(*, state: PipecatSessionState, transcript: str) -> dict[str, Any] | None:
     lowered = transcript.lower().strip()
     session_id = state.session_id
@@ -924,17 +967,21 @@ def _maybe_handle_directive_tool_call(*, state: PipecatSessionState, transcript:
             **formatted,
         }
 
-    if any(phrase in lowered for phrase in ['next slide', 'go next', 'continue to the next slide', 'move to the next slide']):
+    if _is_next_slide_directive(lowered):
         tool_name = 'next_slide'
         result = _dispatch_tool_call(session_id, tool_name)
         slide = _call_get_current_slide(session_id)
         title = slide.get('title') if isinstance(slide, dict) else None
         index = slide.get('index') if isinstance(slide, dict) else None
+        summary = slide.get('summary') if isinstance(slide, dict) else None
+        answer = f"Moved to slide {(index or 0) + 1}{f': {title}' if title else ''}."
+        if summary and any(phrase in lowered for phrase in ['talk about', 'tell me about', "what's on", 'what is on', 'present']):
+            answer = f"{answer} {summary}"
         return {
             'tool_name': tool_name,
             'tool_result': result,
-            'answer': f"Moved to slide {(index or 0) + 1}{f': {title}' if title else ''}.",
-            'citations': [{'slide_index': index, 'reason': 'slide advanced by directive'}] if isinstance(index, int) else [],
+            'answer': answer.strip(),
+            'citations': [{'slide_index': index, 'reason': 'slide advanced before discussing next slide'}] if isinstance(index, int) else [],
         }
 
     if any(phrase in lowered for phrase in ['previous slide', 'go back', 'back one slide']):
@@ -948,6 +995,31 @@ def _maybe_handle_directive_tool_call(*, state: PipecatSessionState, transcript:
             'tool_result': result,
             'answer': f"Moved back to slide {(index or 0) + 1}{f': {title}' if title else ''}.",
             'citations': [{'slide_index': index, 'reason': 'slide reversed by directive'}] if isinstance(index, int) else [],
+        }
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            'start over',
+            'restart deck',
+            'restart the deck',
+            'back to beginning',
+            'back to the beginning',
+            'go to beginning',
+            'go to the beginning',
+        ]
+    ):
+        tool_name = 'goto_slide'
+        result = _dispatch_tool_call(session_id, tool_name, {'slide_index': 0})
+        slide = _call_get_current_slide(session_id)
+        title = slide.get('title') if isinstance(slide, dict) else None
+        index = slide.get('index') if isinstance(slide, dict) else 0
+        answered_index = index if isinstance(index, int) else 0
+        return {
+            'tool_name': tool_name,
+            'tool_result': result,
+            'answer': f"Restarted at slide {answered_index + 1}{f': {title}' if title else ''}.",
+            'citations': [{'slide_index': answered_index, 'reason': 'deck restarted by directive'}],
         }
 
     if any(phrase in lowered for phrase in ['pause presentation', 'pause the presentation', 'pause here']):

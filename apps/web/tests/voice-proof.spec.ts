@@ -50,6 +50,11 @@ test('voice-only transcript loop and live transport handshake work', async ({ pa
   const sessionId = session.session_id as string;
   const publicToken = session.public_token as string;
 
+  const startRes = await fetch(`${apiBase}/api/sessions/${sessionId}/start`, { method: 'POST' });
+  expect(startRes.ok).toBeTruthy();
+  const startedSession = await startRes.json();
+  expect(startedSession.status).toBe('presenting');
+
   const bootstrapRes = await fetch(`${pipecatBase}/sessions/${sessionId}/bootstrap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -201,6 +206,7 @@ test('voice-only transcript loop and live transport handshake work', async ({ pa
   expect(askNextSlideRes.ok).toBeTruthy();
   const askNextSlide = await askNextSlideRes.json();
   expect(String(askNextSlide.answer).toLowerCase()).toContain('slide 2');
+  expect(askNextSlide.tool_state?.last_tool_result?.tool_name).toBe('next_slide');
 
   const askGroundedRes = await fetch(`${pipecatBase}/sessions/${sessionId}/ask`, {
     method: 'POST',
@@ -210,9 +216,18 @@ test('voice-only transcript loop and live transport handshake work', async ({ pa
   expect(askGroundedRes.ok).toBeTruthy();
   const askGrounded = await askGroundedRes.json();
   expect(String(askGrounded.answer).length).toBeGreaterThan(20);
+  expect(Array.isArray(askGrounded.citations)).toBeTruthy();
+  expect(askGrounded.citations.length).toBeGreaterThan(0);
 
   const publicStateRes = await fetch(`${apiBase}/api/public/${publicToken}`);
   expect(publicStateRes.ok).toBeTruthy();
   const publicState = await publicStateRes.json();
   expect(publicState.session.current_slide_index).toBe(1);
+
+  const disconnectRes = await fetch(`${pipecatBase}/sessions/${sessionId}/disconnect`, { method: 'POST' });
+  expect(disconnectRes.ok).toBeTruthy();
+  const disconnect = await disconnectRes.json();
+  expect(disconnect.status).toBe('disconnected');
+  expect(disconnect.connected).toBeFalsy();
+  expect(disconnect.live).toEqual(expect.objectContaining({ state: 'ended', transport_ready: false }));
 });

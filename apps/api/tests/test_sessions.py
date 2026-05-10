@@ -121,8 +121,16 @@ def test_deck_upload_session_and_qna(tmp_path: Path):
     assert realtime_payload['tools']['resume_presentation'].endswith('/resume')
     assert realtime_payload['tool_manifest']
     assert any(tool['name'] == 'search_slides' for tool in realtime_payload['tool_manifest'])
+    next_tool = next(tool for tool in realtime_payload['tool_manifest'] if tool['name'] == 'next_slide')
+    assert 'before speaking about, presenting, or transitioning into the next slide' in next_tool['description']
     assert realtime_payload['pipecat_plan']['orchestrator'] == 'pipecat'
     assert realtime_payload['pipecat_plan']['tool_manifest']
+
+    instructions_response = client.get(f"/api/realtime/sessions/{session_payload['session_id']}/instructions")
+    assert instructions_response.status_code == 200
+    instructions_text = instructions_response.json()['instructions']
+    assert 'never talk through or present the next slide while the UI is still showing the current slide' in instructions_text
+    assert 'advance exactly one slide with next_slide before starting the next slide talk track' in instructions_text
 
     restart_response = client.post(f"/api/sessions/{session_payload['session_id']}/restart-current-slide")
     assert restart_response.status_code == 200

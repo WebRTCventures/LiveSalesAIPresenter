@@ -18,6 +18,12 @@ async function json(url, init) {
   return data;
 }
 
+function assertProof(condition, message, context = undefined) {
+  if (condition) return;
+  const suffix = context === undefined ? '' : ` :: ${JSON.stringify(context)}`;
+  throw new Error(`voice proof failed: ${message}${suffix}`);
+}
+
 async function main() {
   const deck = await json(`${apiBase}/api/decks/use-default`, { method: 'POST' });
   const session = await json(`${apiBase}/api/sessions`, {
@@ -29,11 +35,14 @@ async function main() {
   const sessionId = session.session_id;
   const publicToken = session.public_token;
 
-  await json(`${pipecatBase}/sessions/${sessionId}/bootstrap`, {
+  await json(`${apiBase}/api/sessions/${sessionId}/start`, { method: 'POST' });
+
+  const bootstrap = await json(`${pipecatBase}/sessions/${sessionId}/bootstrap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ publicToken }),
   });
+  assertProof(bootstrap.status === 'ready', 'Pipecat bootstrap did not become ready', bootstrap);
 
   const liveCreate = await json(`${pipecatBase}/sessions/${sessionId}/live/create`, {
     method: 'POST',
@@ -48,8 +57,19 @@ async function main() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sdp: offerSdp, type: 'offer' }),
   });
+  assertProof(join.status === 'ready', 'live join did not return ready', join);
+  assertProof(Boolean(join?.answer?.sdp) && join?.answer?.type === 'answer', 'live join did not return an SDP answer', join?.answer);
+
+  const ice = await json(`${pipecatBase}/sessions/${sessionId}/live/ice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ candidate: { candidate: '', sdpMid: '0', sdpMLineIndex: 0 } }),
+  });
+  assertProof(ice.status === 'ok', 'ICE endpoint rejected end-of-candidates marker', ice);
 
   const liveState = await json(`${pipecatBase}/sessions/${sessionId}/live/state`);
+  assertProof(liveState?.live?.transport_ready === true, 'live transport was not marked ready', liveState?.live);
+
   const askSlide = await json(`${pipecatBase}/sessions/${sessionId}/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -67,6 +87,16 @@ async function main() {
   });
   const publicState = await json(`${apiBase}/api/public/${publicToken}`);
 
+  assertProof(/current slide|slide\s+1/i.test(askSlide?.answer || ''), 'current-slide question did not get a slide-aware answer', askSlide);
+  assertProof(/slide\s+2/i.test(askNext?.answer || ''), 'next-slide directive did not advance to slide 2', askNext);
+  assertProof(askNext?.tool_state?.last_tool_result?.tool_name === 'next_slide', 'next-slide directive did not expose the resolved tool call', askNext?.tool_state);
+  assertProof(Boolean(askGrounded?.answer) && Array.isArray(askGrounded?.citations) && askGrounded.citations.length > 0, 'grounded ask did not return answer citations', askGrounded);
+  assertProof(publicState?.session?.current_slide_index === 1, 'public session state did not reflect slide navigation', publicState?.session);
+
+  const disconnect = await json(`${pipecatBase}/sessions/${sessionId}/disconnect`, { method: 'POST' });
+  assertProof(disconnect.status === 'disconnected' && disconnect.connected === false, 'logical disconnect failed', disconnect);
+  assertProof(disconnect?.live?.state === 'ended' && disconnect?.live?.transport_ready === false, 'disconnect did not stop the live transport', disconnect?.live);
+
   console.log(JSON.stringify({
     sessionId,
     publicToken,
@@ -74,9 +104,11 @@ async function main() {
     joinStatus: join.status,
     hasAnswerSdp: Boolean(join?.answer?.sdp),
     answerType: join?.answer?.type ?? null,
+    iceStatus: ice.status,
     liveTransportReady: liveState?.live?.transport_ready ?? null,
     liveRuntimeStatus: liveState?.live?.runtime_status ?? null,
     livePipelineReady: liveState?.live?.pipeline_ready ?? null,
+    disconnectStatus: disconnect.status,
     currentSlideAnswer: askSlide?.answer ?? null,
     nextSlideAnswer: askNext?.answer ?? null,
     groundedAnswer: askGrounded?.answer ?? null,

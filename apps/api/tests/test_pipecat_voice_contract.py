@@ -67,6 +67,9 @@ def test_pipecat_transcript_loop_handles_slide_tools_and_grounded_answers(
         if url.endswith('/next-slide'):
             slide_state['index'] = 1
             return {'ok': True}
+        if url.endswith('/goto-slide'):
+            slide_state['index'] = int(payload['index'])
+            return {'ok': True}
         if url.endswith('/ask'):
             return {
                 'answer': 'The main value proposition is a faster, guided live sales demo grounded in the uploaded deck.',
@@ -91,18 +94,68 @@ def test_pipecat_transcript_loop_handles_slide_tools_and_grounded_answers(
     assert next_slide_res.status_code == 200
     next_slide = next_slide_res.json()
     assert next_slide['answer'].startswith('Moved to slide 2: Slide 2 title')
+    assert next_slide['tool_state']['last_tool_result']['tool_name'] == 'next_slide'
+    assert next_slide['tool_state']['last_tool_result']['citations'] == [
+        {'slide_index': 1, 'reason': 'slide advanced before discussing next slide'},
+    ]
     assert pipecat_server.SESSIONS['session-1'].tool_state['last_tool_result']['tool_name'] == 'next_slide'
+
+    discuss_next_res = client.post('/sessions/session-1/ask', json={'transcript': "Let's talk about the next slide"})
+    assert discuss_next_res.status_code == 200
+    discuss_next = discuss_next_res.json()
+    assert discuss_next['answer'].startswith('Moved to slide 2: Slide 2 title')
+    assert 'Summary for slide 2' in discuss_next['answer']
+    assert discuss_next['tool_state']['last_tool_result']['tool_name'] == 'next_slide'
+
+    restart_res = client.post('/sessions/session-1/ask', json={'transcript': 'start over'})
+    assert restart_res.status_code == 200
+    restart = restart_res.json()
+    assert restart['answer'].startswith('Restarted at slide 1: Slide 1 title')
+    assert restart['tool_state']['last_tool_result']['tool_name'] == 'goto_slide'
+    assert restart['tool_state']['last_tool_result']['citations'] == [
+        {'slide_index': 0, 'reason': 'deck restarted by directive'},
+    ]
 
     grounded_res = client.post('/sessions/session-1/ask', json={'transcript': 'What is the main value proposition?'})
     assert grounded_res.status_code == 200
     grounded = grounded_res.json()
     assert 'value proposition' in grounded['answer']
     assert grounded['citations'] == [{'slide_index': 0, 'reason': 'grounded answer'}]
+    assert grounded['tool_state'] is None
 
-    assert any(method == 'POST' and url.endswith('/api/sessions/session-1/next-slide') and payload == {} for method, url, payload in api_calls)
+    assert sum(1 for method, url, payload in api_calls if method == 'POST' and url.endswith('/api/sessions/session-1/next-slide') and payload == {}) == 2
+    assert any(method == 'POST' and url.endswith('/api/sessions/session-1/goto-slide') and payload == {'index': 0} for method, url, payload in api_calls)
     assert any(
         method == 'POST'
         and url.endswith('/api/sessions/session-1/ask')
         and payload == {'question': 'What is the main value proposition?'}
         for method, url, payload in api_calls
     )
+
+
+def test_pipecat_disconnect_stops_and_removes_live_transport(client: TestClient) -> None:
+    connect_res = client.post('/sessions/session-1/connect', json={'publicToken': 'public-test-token'})
+    assert connect_res.status_code == 200
+
+    live = pipecat_server.LivePresenterSession(
+        session_id='session-1',
+        public_token='public-test-token',
+        webrtc=pipecat_server.SmallWebRTCConnection(),
+        state='ready',
+        transport_ready=True,
+        pipeline_ready=True,
+    )
+    pipecat_server.LIVE_SESSIONS['session-1'] = live
+    pipecat_server.SESSIONS['session-1'].live_session = pipecat_server._serialize_live_session(live)
+
+    disconnect_res = client.post('/sessions/session-1/disconnect')
+
+    assert disconnect_res.status_code == 200
+    payload = disconnect_res.json()
+    assert payload['status'] == 'disconnected'
+    assert payload['connected'] is False
+    assert payload['live']['state'] == 'ended'
+    assert payload['live']['transport_ready'] is False
+    assert 'session-1' not in pipecat_server.LIVE_SESSIONS
+    assert pipecat_server.SESSIONS['session-1'].connected is False
+    assert pipecat_server.SESSIONS['session-1'].live_session == {}

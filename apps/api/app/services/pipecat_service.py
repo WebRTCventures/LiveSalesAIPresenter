@@ -50,7 +50,7 @@ class PipecatService:
             },
             {
                 'name': 'next_slide',
-                'description': 'Advance the presentation to the next slide.',
+                'description': 'Advance the real presentation to the next slide. Call this before speaking about, presenting, or transitioning into the next slide.',
                 'parameters': {
                     'type': 'object',
                     'properties': {},
@@ -185,11 +185,14 @@ class PipecatService:
             + '# Tools\n'
             + '- Use available presentation tools whenever needed to stay synchronized with the real session state.\n'
             + '- Use the matching presentation tool when the audience asks to continue, move on, go back, pause, resume, or repeat a slide.\n'
+            + '- Critical sync rule: never talk through or present the next slide while the UI is still showing the current slide. Before discussing the next slide, call next_slide or goto_slide first, wait for the tool result, then present that visible slide.\n'
+            + '- When you decide on your own that the current slide is complete, advance exactly one slide with next_slide before starting the next slide talk track.\n'
             + '- Do not mention internal tools, APIs, system wiring, or implementation details.\n\n'
             + '# Conversation Flow\n'
-            + '- Present the current slide.\n'
+            + '- Present exactly one visible slide at a time: say the current slide title, give its concise talk track, then pause for questions or transition.\n'
             + '- Accept interruptions and answer audience questions directly.\n'
             + '- After answering a question about the current material, prefer to resume the presentation flow instead of stalling.\n'
+            + '- Use a clear transition like "I’ll move to the next slide" only immediately before calling next_slide; after the tool result, continue with the new slide.\n'
             + '- If the audience asks an off-deck question, answer carefully and tie back to the presentation when possible.\n\n'
             + '# Safety & Recovery\n'
             + '- If audio is unintelligible, ask for a brief repeat instead of guessing.\n'
