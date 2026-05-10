@@ -11,8 +11,8 @@ services:
     ports:
       - "${API_PORT:-8025}:8000"
     volumes:
-      - ./storage:/workspace-storage
-      - ./apps/api/sales_presenter.db:/app/sales_presenter.db
+      - ./storage:/workspace/storage
+      - ./apps/api/sales_presenter.db:/workspace/apps/api/sales_presenter.db
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
