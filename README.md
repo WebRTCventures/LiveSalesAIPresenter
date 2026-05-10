@@ -146,5 +146,7 @@ Note: the build script intentionally clears `apps/web/.next` first. That avoids 
 - The active finish line is voice-only; no avatar vendor or browser avatar SDK is part of this version.
 - Pipecat owns the voice path: `/bootstrap`, `/live/create`, `/live/join`, `/live/ice`, `/ask`, and slide/navigation tools.
 - Text Q&A and simulated voice are available for non-live proof; live voice requires Pipecat plus OpenAI Realtime credentials.
+- Set `PRODUCTION=true` to hide non-live testing controls such as text Q&A and simulated voice in the presentation UI. Leave it false/empty for local proof and demo validation.
+- `text-embedding-3-small` support is currently a placeholder: the API client has an embedding helper and slides have an `embedding_ref` field, but embeddings are not generated or used yet. The intended use is semantic slide retrieval during preprocessing/Q&A, so questions can match related slide meaning even when keywords differ.
 - The browser media-path proof currently verifies SDP answer, ICE candidate exchange, and a live remote audio receiver; spoken-audio automation remains a later slice.
 - Best demo experience is still with relatively small PDF decks.

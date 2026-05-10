@@ -20,6 +20,8 @@ interface Props {
   initialData: SessionSnapshot;
 }
 
+const SHOW_TESTING_CONTROLS = process.env.NEXT_PUBLIC_PRODUCTION !== 'true';
+
 export function PresentationShell({ initialData }: Props) {
   const [snapshot, setSnapshot] = useState(initialData);
   const [answer, setAnswer] = useState<string>('');
@@ -651,6 +653,7 @@ export function PresentationShell({ initialData }: Props) {
         <QuestionInput
           busy={busy}
           voiceActive={voicePipeline?.status === 'listening' || voicePipeline?.status === 'thinking' || voicePipeline?.status === 'speaking'}
+          showTestingControls={SHOW_TESTING_CONTROLS}
           onSubmit={(question) =>
             run(async () => {
               const result = await askQuestion(sessionId, question);
@@ -696,7 +699,7 @@ export function PresentationShell({ initialData }: Props) {
                   </p>
                 ) : (
                   <p style={{ margin: 0, lineHeight: 1.6, color: 'var(--muted)' }}>
-                    No live provider token yet — use simulated voice/text Q&A until Realtime transport is configured.
+                    No live provider token yet — configure Realtime transport before using live voice.
                   </p>
                 )}
                 {(() => {

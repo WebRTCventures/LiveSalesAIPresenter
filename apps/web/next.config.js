@@ -3,9 +3,13 @@
 // (`API_BASE_URL=http://api:8000`) over browser-facing NEXT_PUBLIC localhost URLs.
 const apiBase = (process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8025').replace(/\/$/, '');
 const pipecatBase = (process.env.PIPECAT_SERVICE_URL || process.env.NEXT_PUBLIC_PIPECAT_SERVICE_URL || 'http://localhost:8110').replace(/\/$/, '');
+const productionFlag = process.env.PRODUCTION === 'true' || process.env.NEXT_PUBLIC_PRODUCTION === 'true' || process.env.APP_ENV === 'production';
 
 const nextConfig = {
   typedRoutes: true,
+  env: {
+    NEXT_PUBLIC_PRODUCTION: String(productionFlag),
+  },
   async rewrites() {
     return [
       {
