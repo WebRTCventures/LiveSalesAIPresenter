@@ -169,7 +169,7 @@ app.add_middleware(
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8025').rstrip('/')
 PIPECAT_SERVICE_URL = os.getenv('PIPECAT_SERVICE_URL', 'http://localhost:8110').rstrip('/')
 OPENAI_REALTIME_MODEL = os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-mini')
-HEYGEN_LIVE_AVATAR_API_KEY = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
+HEYGEN_LIVE_AVATAR_API_KEY = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY') or os.getenv('HEYGEN_API_KEY')
 HEYGEN_AVATAR_ID = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
 HEYGEN_SANDBOX = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
 HEYGEN_SANDBOX_AVATAR_ID = os.getenv('HEYGEN_SANDBOX_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
@@ -1310,7 +1310,7 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
             live.video_pipeline_enabled = True
             processors.append(heygen)
         else:
-            live.add_event('heygen_video_service_skipped', reason='HEYGEN_LIVE_AVATAR_API_KEY is not configured')
+            live.add_event('heygen_video_service_skipped', reason='HEYGEN_LIVE_AVATAR_API_KEY/HEYGEN_API_KEY is not configured')
 
         processors.append(transport.output())
         pipeline = Pipeline(processors)
