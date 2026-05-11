@@ -150,6 +150,10 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
     for (const track of localStream.getTracks()) {
       pc.addTrack(track, localStream);
     }
+    // The HeyGenVideoService publishes avatar video back through the same
+    // Pipecat WebRTC connection. Explicitly request a receive-only video m-line
+    // so the browser offer can negotiate that remote avatar track.
+    pc.addTransceiver('video', { direction: 'recvonly' });
 
     pc.ontrack = (event) => {
       const [stream] = event.streams;
