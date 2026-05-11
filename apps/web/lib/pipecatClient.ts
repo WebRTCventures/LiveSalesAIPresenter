@@ -80,6 +80,7 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
   audioEl.setAttribute('playsinline', 'true');
   audioEl.style.display = 'none';
   document.body.appendChild(audioEl);
+  const avatarVideoEl = document.getElementById('heygen-avatar-video') as HTMLVideoElement | null;
 
   const setStatus = (status: string) => options.onStatusChange?.(status);
   const fail = (message: string) => {
@@ -152,7 +153,17 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
 
     pc.ontrack = (event) => {
       const [stream] = event.streams;
-      if (stream) {
+      if (!stream) return;
+
+      if (event.track.kind === 'video' && avatarVideoEl) {
+        avatarVideoEl.srcObject = stream;
+        void avatarVideoEl.play().catch((error) => {
+          fail(error instanceof Error ? `Pipecat avatar video playback failed: ${error.message}` : 'Pipecat avatar video playback failed');
+        });
+        return;
+      }
+
+      if (event.track.kind === 'audio') {
         audioEl.srcObject = stream;
         startAudioMeter(stream);
         void audioEl.play().catch((error) => {
@@ -280,7 +291,9 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
           localStream?.getTracks().forEach((track) => track.stop());
         } catch {}
         audioEl.srcObject = null;
-        audioEl.remove();
+        if (avatarVideoEl) avatarVideoEl.srcObject = null;
+        if (avatarVideoEl) avatarVideoEl.srcObject = null;
+      audioEl.remove();
         connected = false;
         setStatus('disconnected');
       },
@@ -298,6 +311,7 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
       localStream?.getTracks().forEach((track) => track.stop());
       pc.close();
       stopAudioMeter();
+      if (avatarVideoEl) avatarVideoEl.srcObject = null;
       audioEl.remove();
     } catch {}
     const message = error instanceof Error ? error.message : 'Pipecat connection failed';

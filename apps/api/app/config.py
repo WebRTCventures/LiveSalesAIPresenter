@@ -19,7 +19,7 @@ class Settings:
     pipecat_service_url: str = os.getenv('PIPECAT_SERVICE_URL', 'http://localhost:8110')
     heygen_live_avatar_api_key: str | None = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
     heygen_avatar_id: str = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
-    heygen_sandbox: bool = os.getenv('HEYGEN_SANDBOX', 'false').lower() == 'true'
+    heygen_sandbox: bool = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
 
 
 settings = Settings()

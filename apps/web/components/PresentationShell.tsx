@@ -740,9 +740,9 @@ export function PresentationShell({ initialData }: Props) {
 
       <div style={{ display: 'grid', gap: 24 }}>
         <HeyGenAvatarPanel
-          sessionId={sessionId}
           talkTrack={activeVoiceLine}
           speaking={speaking}
+          voiceActive={voicePipeline?.status === 'listening' || voicePipeline?.status === 'connected' || voicePipeline?.status === 'speaking'}
         />
         <DemoReadinessCard snapshot={snapshot} bootstrap={bootstrap} voice={voicePipeline} />
         <LiveOpsCard live={liveState} />

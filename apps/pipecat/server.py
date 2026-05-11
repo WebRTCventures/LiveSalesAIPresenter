@@ -42,8 +42,9 @@ try:
     )
     from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
     from pipecat.services.heygen.api_liveavatar import LiveAvatarNewSessionRequest
+    from pipecat.services.heygen.client import ServiceType
+    from pipecat.services.heygen.video import HeyGenVideoService
     from pipecat.transports.base_transport import TransportParams
-    from pipecat.transports.heygen.transport import HeyGenParams, HeyGenTransport, ServiceType
     from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
     from pipecat.transports.smallwebrtc.transport import RawAudioTrack, SmallWebRTCTransport
     PIPECAT_RUNTIME_AVAILABLE = True
@@ -60,8 +61,7 @@ except Exception:  # pragma: no cover - fallback for non-pipecat test envs
     InputAudioTranscription = None  # type: ignore[assignment]
     OpenAIRealtimeLLMService = None  # type: ignore[assignment]
     LiveAvatarNewSessionRequest = None  # type: ignore[assignment]
-    HeyGenParams = None  # type: ignore[assignment]
-    HeyGenTransport = None  # type: ignore[assignment]
+    HeyGenVideoService = None  # type: ignore[assignment]
     ServiceType = None  # type: ignore[assignment]
     ErrorFrame = None  # type: ignore[assignment]
     Pipeline = None  # type: ignore[assignment]
@@ -171,7 +171,7 @@ PIPECAT_SERVICE_URL = os.getenv('PIPECAT_SERVICE_URL', 'http://localhost:8110').
 OPENAI_REALTIME_MODEL = os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-mini')
 HEYGEN_LIVE_AVATAR_API_KEY = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
 HEYGEN_AVATAR_ID = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
-HEYGEN_SANDBOX = os.getenv('HEYGEN_SANDBOX', 'false').lower() == 'true'
+HEYGEN_SANDBOX = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
 
 
 class SessionCreateRequest(BaseModel):
@@ -250,7 +250,7 @@ class LivePresenterSession:
     runtime_task: asyncio.Task | None = field(default=None, repr=False, compare=False)
     pipeline_task: Any | None = field(default=None, repr=False, compare=False)
     pipeline_runner: Any | None = field(default=None, repr=False, compare=False)
-    heygen_transport: Any | None = field(default=None, repr=False, compare=False)
+    heygen_service: Any | None = field(default=None, repr=False, compare=False)
     aiohttp_session: Any | None = field(default=None, repr=False, compare=False)
 
     def touch(self) -> None:
@@ -438,8 +438,8 @@ async def create_live_session(session_id: str, payload: LiveSessionCreateRequest
 
 @app.post('/sessions/{session_id}/heygen/start')
 async def start_heygen_live_session(session_id: str, payload: LiveSessionCreateRequest | None = None) -> dict[str, Any]:
-    if not _heygen_transport_enabled():
-        raise HTTPException(status_code=503, detail='Pipecat HeyGen transport is not configured. Set HEYGEN_LIVE_AVATAR_API_KEY and install pipecat-ai[heygen].')
+    if not _heygen_video_service_enabled():
+        raise HTTPException(status_code=503, detail='Pipecat HeyGen video service is not configured. Set HEYGEN_LIVE_AVATAR_API_KEY and install pipecat-ai[heygen].')
 
     existing = SESSIONS.get(session_id)
     contract = existing.contract if existing else _fetch_contract(session_id)
@@ -477,7 +477,7 @@ async def start_heygen_live_session(session_id: str, payload: LiveSessionCreateR
         'sessionId': session_id,
         'live': _serialize_live_session(live),
         'heygen': live.heygen_join,
-        'nextStep': 'Connect the browser to the returned LiveKit URL/token to render the HeyGen avatar video.',
+        'nextStep': 'Start the existing Pipecat WebRTC voice connection; HeyGen avatar video is returned on that WebRTC stream.',
     }
 
 
@@ -1215,25 +1215,8 @@ def _serialize_live_session(live: LivePresenterSession) -> dict[str, Any]:
     }
 
 
-def _heygen_transport_enabled() -> bool:
-    return bool(HEYGEN_LIVE_AVATAR_API_KEY and HeyGenTransport and LiveAvatarNewSessionRequest)
-
-
-def _extract_heygen_join(live: LivePresenterSession) -> dict[str, Any]:
-    transport = live.heygen_transport
-    client = getattr(transport, '_client', None) if transport else None
-    session = getattr(client, '_heyGen_session', None) if client else None
-    if not session:
-        return {}
-    return {
-        'provider': 'pipecat-heygen-transport',
-        'session_id': getattr(session, 'session_id', None),
-        'livekit_url': getattr(session, 'livekit_url', None),
-        'access_token': getattr(session, 'access_token', None),
-        'ws_url': getattr(session, 'ws_url', None),
-        'avatar_id': HEYGEN_AVATAR_ID,
-        'sandbox': HEYGEN_SANDBOX,
-    }
+def _heygen_video_service_enabled() -> bool:
+    return bool(HEYGEN_LIVE_AVATAR_API_KEY and HeyGenVideoService and LiveAvatarNewSessionRequest)
 
 
 def _format_heygen_start_error(error: str | None) -> str:
@@ -1246,24 +1229,16 @@ def _format_heygen_start_error(error: str | None) -> str:
     return error
 
 
-async def _wait_for_heygen_join(live: LivePresenterSession) -> dict[str, Any]:
-    for _ in range(80):
-        join = _extract_heygen_join(live)
-        if join.get('livekit_url') and join.get('access_token'):
-            live.heygen_join = join
-            live.heygen_ready = True
-            live.add_event('heygen_join_ready', session_id=join.get('session_id'))
-            return join
-        if live.last_error:
-            live.add_event('heygen_join_failed', error=live.last_error)
-            raise HTTPException(status_code=502, detail=_format_heygen_start_error(live.last_error))
-        if live.runtime_task and live.runtime_task.done() and live.runtime_status == 'error':
-            error = live.last_error or 'HeyGen avatar runtime exited before returning a join token.'
-            live.add_event('heygen_join_failed', error=error)
-            raise HTTPException(status_code=502, detail=_format_heygen_start_error(error))
-        await asyncio.sleep(0.1)
-    live.add_event('heygen_join_pending')
-    raise HTTPException(status_code=504, detail='HeyGen avatar session is still starting; no browser join token was returned yet.')
+async def _mark_heygen_video_ready(live: LivePresenterSession) -> None:
+    if _heygen_video_service_enabled():
+        live.heygen_ready = True
+        live.heygen_join = {
+            'provider': 'pipecat-heygen-video-service',
+            'avatar_id': HEYGEN_AVATAR_ID,
+            'sandbox': HEYGEN_SANDBOX,
+        }
+        live.add_event('heygen_video_service_ready', avatar_id=HEYGEN_AVATAR_ID)
+
 
 
 async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSessionState) -> None:
@@ -1280,36 +1255,19 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
 
     processors = []
     try:
-        if _heygen_transport_enabled():
-            live.aiohttp_session = live.aiohttp_session or aiohttp.ClientSession()
-            transport = HeyGenTransport(
-                session=live.aiohttp_session,
-                api_key=HEYGEN_LIVE_AVATAR_API_KEY,
-                service_type=ServiceType.LIVE_AVATAR,
-                params=HeyGenParams(audio_in_enabled=True, audio_out_enabled=True),
-                session_request=LiveAvatarNewSessionRequest(
-                    avatar_id=HEYGEN_AVATAR_ID,
-                    is_sandbox=HEYGEN_SANDBOX,
-                ),
-            )
-            live.heygen_transport = transport
-            live.video_pipeline_enabled = True
-            processors.append(transport.input())
-        else:
-            params = TransportParams(
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-                audio_out_sample_rate=24000,
-                audio_in_sample_rate=24000,
-                # Keep browser video readable if a future client offers it, while
-                # LivePresenterWebRTCConnection keeps voice-only SDP answers valid.
-                video_in_enabled=True,
-                video_out_enabled=bool(live.video_ready),
-                video_out_width=1024,
-                video_out_height=768,
-            )
-            transport = SmallWebRTCTransport(live.webrtc, params=params)
-            processors.append(transport.input())
+        params = TransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            audio_out_sample_rate=24000,
+            audio_in_sample_rate=24000,
+            video_in_enabled=False,
+            video_out_enabled=_heygen_video_service_enabled(),
+            video_out_is_live=_heygen_video_service_enabled(),
+            video_out_width=1280,
+            video_out_height=720,
+        )
+        transport = SmallWebRTCTransport(live.webrtc, params=params)
+        processors.append(transport.input())
 
         llm = None
         if live.openai_ready:
@@ -1318,6 +1276,23 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
             processors.append(llm)
         else:
             live.add_event('openai_realtime_skipped', reason='OPENAI_API_KEY is not configured')
+
+        if _heygen_video_service_enabled():
+            live.aiohttp_session = live.aiohttp_session or aiohttp.ClientSession()
+            heygen = HeyGenVideoService(
+                api_key=HEYGEN_LIVE_AVATAR_API_KEY,
+                service_type=ServiceType.LIVE_AVATAR,
+                session=live.aiohttp_session,
+                session_request=LiveAvatarNewSessionRequest(
+                    avatar_id=HEYGEN_AVATAR_ID,
+                    is_sandbox=HEYGEN_SANDBOX,
+                ),
+            )
+            live.heygen_service = heygen
+            live.video_pipeline_enabled = True
+            processors.append(heygen)
+        else:
+            live.add_event('heygen_video_service_skipped', reason='HEYGEN_LIVE_AVATAR_API_KEY is not configured')
 
         processors.append(transport.output())
         pipeline = Pipeline(processors)
@@ -1363,10 +1338,10 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
             'runtime_started',
             openai_enabled=bool(llm),
             video_enabled=live.video_pipeline_enabled,
-            heygen_enabled=_heygen_transport_enabled(),
+            heygen_enabled=_heygen_video_service_enabled(),
         )
-        if _heygen_transport_enabled():
-            await _wait_for_heygen_join(live)
+        if _heygen_video_service_enabled():
+            await _mark_heygen_video_ready(live)
     except Exception as exc:
         live.runtime_status = 'error'
         live.pipeline_ready = False
@@ -1425,7 +1400,7 @@ async def _stop_live_runtime(live: LivePresenterSession) -> None:
     live.runtime_task = None
     live.pipeline_task = None
     live.pipeline_runner = None
-    live.heygen_transport = None
+    live.heygen_service = None
     live.aiohttp_session = None
     live.pipeline_ready = False
     live.heygen_ready = False
