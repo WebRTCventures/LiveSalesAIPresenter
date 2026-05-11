@@ -39,6 +39,7 @@ export function PresentationShell({ initialData }: Props) {
   const [liveAnswer, setLiveAnswer] = useState('');
   const [liveConnectionStatus, setLiveConnectionStatus] = useState<RealtimeConnectionStatus>('idle');
   const [remoteAudioLevel, setRemoteAudioLevel] = useState(0);
+  const [avatarVideoActive, setAvatarVideoActive] = useState(false);
   const realtimeClientRef = useRef<RealtimeBrowserSession | null>(null);
   const voiceStartRef = useRef(false);
 
@@ -368,6 +369,7 @@ export function PresentationShell({ initialData }: Props) {
     setLiveTranscript('');
     setLiveAnswer('');
     setRemoteAudioLevel(0);
+    setAvatarVideoActive(false);
     setVoicePipeline({ status: 'listening', mode: 'starting' });
 
     try {
@@ -408,6 +410,7 @@ export function PresentationShell({ initialData }: Props) {
             setVoicePipeline((current) => (current ? { ...current, status } : current));
           },
           onRemoteAudioLevel: setRemoteAudioLevel,
+          onRemoteVideo: () => setAvatarVideoActive(true),
           onError: (message) => setError(message),
         });
         realtimeClientRef.current = handle as unknown as RealtimeBrowserSession;
@@ -522,6 +525,7 @@ export function PresentationShell({ initialData }: Props) {
     await realtimeClientRef.current?.disconnect();
     realtimeClientRef.current = null;
     setLiveConnectionStatus('idle');
+    setAvatarVideoActive(false);
     const result = await stopVoicePipeline(sessionId);
     setVoicePipeline(result);
     setLiveTranscript('');
@@ -742,7 +746,7 @@ export function PresentationShell({ initialData }: Props) {
         <HeyGenAvatarPanel
           talkTrack={activeVoiceLine}
           speaking={speaking}
-          voiceActive={voicePipeline?.status === 'listening' || voicePipeline?.status === 'connected' || voicePipeline?.status === 'speaking'}
+          voiceActive={avatarVideoActive || ['connecting', 'connected'].includes(liveConnectionStatus) || Boolean(voicePipeline && !['idle', 'error', 'disconnected'].includes(String(voicePipeline.status)))}
         />
         <DemoReadinessCard snapshot={snapshot} bootstrap={bootstrap} voice={voicePipeline} />
         <LiveOpsCard live={liveState} />

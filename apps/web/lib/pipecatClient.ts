@@ -11,6 +11,7 @@ export interface PipecatSessionOptions {
   connectedStatuses?: string[];
   onStatusChange?: (status: string) => void;
   onRemoteAudioLevel?: (level: number) => void;
+  onRemoteVideo?: () => void;
   onError?: (message: string) => void;
 }
 
@@ -161,6 +162,7 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
 
       if (event.track.kind === 'video' && avatarVideoEl) {
         avatarVideoEl.srcObject = stream;
+        options.onRemoteVideo?.();
         void avatarVideoEl.play().catch((error) => {
           fail(error instanceof Error ? `Pipecat avatar video playback failed: ${error.message}` : 'Pipecat avatar video playback failed');
         });
