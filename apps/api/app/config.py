@@ -20,6 +20,11 @@ class Settings:
     heygen_live_avatar_api_key: str | None = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
     heygen_avatar_id: str = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
     heygen_sandbox: bool = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
+    heygen_sandbox_avatar_id: str = os.getenv('HEYGEN_SANDBOX_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
+
+    @property
+    def heygen_effective_avatar_id(self) -> str:
+        return self.heygen_sandbox_avatar_id if self.heygen_sandbox else self.heygen_avatar_id
 
 
 settings = Settings()

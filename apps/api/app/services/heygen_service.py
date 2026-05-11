@@ -12,7 +12,7 @@ class HeyGenService:
         return {
             'provider': 'pipecat-heygen-transport',
             'enabled': self.enabled,
-            'avatar_id': settings.heygen_avatar_id,
+            'avatar_id': settings.heygen_effective_avatar_id,
             'sandbox': settings.heygen_sandbox,
         }
 

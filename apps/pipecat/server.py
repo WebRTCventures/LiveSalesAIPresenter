@@ -172,6 +172,13 @@ OPENAI_REALTIME_MODEL = os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-mini')
 HEYGEN_LIVE_AVATAR_API_KEY = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
 HEYGEN_AVATAR_ID = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
 HEYGEN_SANDBOX = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
+HEYGEN_SANDBOX_AVATAR_ID = os.getenv('HEYGEN_SANDBOX_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
+
+
+def _heygen_avatar_id() -> str:
+    # HeyGen sandbox mode only supports the documented sandbox avatar.
+    # Keep custom HEYGEN_AVATAR_ID for non-sandbox runs.
+    return HEYGEN_SANDBOX_AVATAR_ID if HEYGEN_SANDBOX else HEYGEN_AVATAR_ID
 
 
 class SessionCreateRequest(BaseModel):
@@ -1234,10 +1241,10 @@ async def _mark_heygen_video_ready(live: LivePresenterSession) -> None:
         live.heygen_ready = True
         live.heygen_join = {
             'provider': 'pipecat-heygen-video-service',
-            'avatar_id': HEYGEN_AVATAR_ID,
+            'avatar_id': _heygen_avatar_id(),
             'sandbox': HEYGEN_SANDBOX,
         }
-        live.add_event('heygen_video_service_ready', avatar_id=HEYGEN_AVATAR_ID)
+        live.add_event('heygen_video_service_ready', avatar_id=_heygen_avatar_id(), sandbox=HEYGEN_SANDBOX)
 
 
 
@@ -1284,7 +1291,7 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
                 service_type=ServiceType.LIVE_AVATAR,
                 session=live.aiohttp_session,
                 session_request=LiveAvatarNewSessionRequest(
-                    avatar_id=HEYGEN_AVATAR_ID,
+                    avatar_id=_heygen_avatar_id(),
                     is_sandbox=HEYGEN_SANDBOX,
                 ),
             )
