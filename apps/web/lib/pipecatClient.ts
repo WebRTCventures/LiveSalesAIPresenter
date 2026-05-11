@@ -161,7 +161,17 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
       if (!stream) return;
 
       if (event.track.kind === 'video' && avatarVideoEl) {
-        avatarVideoEl.srcObject = stream;
+        const videoStream = new MediaStream([event.track]);
+        avatarVideoEl.srcObject = videoStream;
+        avatarVideoEl.muted = true;
+        avatarVideoEl.autoplay = true;
+        avatarVideoEl.playsInline = true;
+        event.track.onunmute = () => {
+          options.onRemoteVideo?.();
+          void avatarVideoEl.play().catch((error) => {
+            fail(error instanceof Error ? `Pipecat avatar video playback failed: ${error.message}` : 'Pipecat avatar video playback failed');
+          });
+        };
         options.onRemoteVideo?.();
         void avatarVideoEl.play().catch((error) => {
           fail(error instanceof Error ? `Pipecat avatar video playback failed: ${error.message}` : 'Pipecat avatar video playback failed');
