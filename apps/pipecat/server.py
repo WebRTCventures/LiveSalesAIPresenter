@@ -173,6 +173,8 @@ HEYGEN_LIVE_AVATAR_API_KEY = os.getenv('HEYGEN_LIVE_AVATAR_API_KEY')
 HEYGEN_AVATAR_ID = os.getenv('HEYGEN_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
 HEYGEN_SANDBOX = os.getenv('HEYGEN_SANDBOX', 'true').lower() == 'true'
 HEYGEN_SANDBOX_AVATAR_ID = os.getenv('HEYGEN_SANDBOX_AVATAR_ID', 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a')
+HEYGEN_VIDEO_WIDTH = int(os.getenv('HEYGEN_VIDEO_WIDTH', '640'))
+HEYGEN_VIDEO_HEIGHT = int(os.getenv('HEYGEN_VIDEO_HEIGHT', '360'))
 
 
 def _heygen_avatar_id() -> str:
@@ -1279,8 +1281,8 @@ async def _ensure_live_runtime(live: LivePresenterSession, state: PipecatSession
             video_in_enabled=False,
             video_out_enabled=_heygen_video_service_enabled(),
             video_out_is_live=_heygen_video_service_enabled(),
-            video_out_width=1280,
-            video_out_height=720,
+            video_out_width=HEYGEN_VIDEO_WIDTH,
+            video_out_height=HEYGEN_VIDEO_HEIGHT,
         )
         transport = SmallWebRTCTransport(live.webrtc, params=params)
         processors.append(transport.input())

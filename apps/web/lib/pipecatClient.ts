@@ -158,10 +158,9 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
 
     pc.ontrack = (event) => {
       const [stream] = event.streams;
-      if (!stream) return;
 
       if (event.track.kind === 'video' && avatarVideoEl) {
-        const videoStream = new MediaStream([event.track]);
+        const videoStream = stream ?? new MediaStream([event.track]);
         avatarVideoEl.srcObject = videoStream;
         avatarVideoEl.muted = true;
         avatarVideoEl.autoplay = true;
@@ -180,8 +179,9 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
       }
 
       if (event.track.kind === 'audio') {
-        audioEl.srcObject = stream;
-        startAudioMeter(stream);
+        const audioStream = stream ?? new MediaStream([event.track]);
+        audioEl.srcObject = audioStream;
+        startAudioMeter(audioStream);
         void audioEl.play().catch((error) => {
           fail(error instanceof Error ? `Pipecat audio playback failed: ${error.message}` : 'Pipecat audio playback failed');
         });
