@@ -1221,7 +1221,7 @@ def _heygen_video_service_enabled() -> bool:
 
 def _format_heygen_start_error(error: str | None) -> str:
     if not error:
-        return 'HeyGen avatar session did not return a LiveKit join token yet.'
+        return 'HeyGen avatar video service did not become ready yet.'
     if 'No credits available for start session' in error or 'code\":4033' in error or 'code":4033' in error:
         return 'HeyGen LiveAvatar could not start: no credits available for start session.'
     if 'API request failed with status 403' in error:
