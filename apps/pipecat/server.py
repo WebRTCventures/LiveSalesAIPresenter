@@ -285,7 +285,7 @@ def health() -> dict[str, Any]:
         'apiBaseUrl': API_BASE_URL,
         'sessionCount': len(SESSIONS),
         'providers': {
-            'videoConfigured': False,
+            'videoConfigured': _heygen_video_service_enabled(),
             'openaiConfigured': bool(os.getenv('OPENAI_API_KEY')),
             'heygenConfigured': bool(HEYGEN_LIVE_AVATAR_API_KEY),
             'pipecatRuntimeAvailable': PIPECAT_RUNTIME_AVAILABLE,
@@ -376,29 +376,39 @@ async def create_live_session(session_id: str, payload: LiveSessionCreateRequest
     )
 
     existing_live = LIVE_SESSIONS.get(session_id)
+    video_ready = _heygen_video_service_enabled()
     if existing_live and existing_live.state not in {'error', 'ended'}:
-        existing_live.add_event('live_session_reused', state=existing_live.state)
-        state.live_session = _serialize_live_session(existing_live)
-        state.frontend_contract = _build_agent_contract(state)
-        return {
-            'status': 'ready',
-            'sessionId': session_id,
-            'publicToken': state.public_token,
-            'live': _serialize_live_session(existing_live),
-            'agent': state.frontend_contract,
-            'transport': {
-                'provider': 'smallwebrtc',
-                'join_url': f'/sessions/{session_id}/live/join',
-                'ice_url': f'/sessions/{session_id}/live/ice',
-                'state_url': f'/sessions/{session_id}/live/state',
-                'stop_url': f'/sessions/{session_id}/live/stop',
-            },
-            'providers': {
-                'openai_realtime_ready': existing_live.openai_ready,
-                'video_ready': existing_live.video_ready,
-            },
-            'nextStep': 'Reuse the existing browser WebRTC live session and POST the browser offer to /live/join.',
-        }
+        existing_video_out = bool(getattr(existing_live.webrtc, '_presenter_video_out_enabled', False))
+        if existing_video_out == video_ready:
+            existing_live.add_event('live_session_reused', state=existing_live.state, video_ready=existing_live.video_ready)
+            state.live_session = _serialize_live_session(existing_live)
+            state.frontend_contract = _build_agent_contract(state)
+            return {
+                'status': 'ready',
+                'sessionId': session_id,
+                'publicToken': state.public_token,
+                'live': _serialize_live_session(existing_live),
+                'agent': state.frontend_contract,
+                'transport': {
+                    'provider': 'smallwebrtc',
+                    'join_url': f'/sessions/{session_id}/live/join',
+                    'ice_url': f'/sessions/{session_id}/live/ice',
+                    'state_url': f'/sessions/{session_id}/live/state',
+                    'stop_url': f'/sessions/{session_id}/live/stop',
+                },
+                'providers': {
+                    'openai_realtime_ready': existing_live.openai_ready,
+                    'video_ready': existing_live.video_ready,
+                },
+                'nextStep': 'Reuse the existing browser WebRTC live session and POST the browser offer to /live/join.',
+            }
+        existing_live.add_event('live_session_replaced_for_video_negotiation', previous_video_ready=existing_live.video_ready, next_video_ready=video_ready)
+        try:
+            await _stop_live_runtime(existing_live)
+        except Exception:
+            pass
+        LIVE_SESSIONS.pop(session_id, None)
+        existing_live = None
     if existing_live is not None:
         try:
             await _stop_live_runtime(existing_live)
@@ -406,7 +416,6 @@ async def create_live_session(session_id: str, payload: LiveSessionCreateRequest
             pass
         LIVE_SESSIONS.pop(session_id, None)
 
-    video_ready = False
     live = LivePresenterSession(
         session_id=session_id,
         public_token=state.public_token,
@@ -465,7 +474,7 @@ async def start_heygen_live_session(session_id: str, payload: LiveSessionCreateR
         live = LivePresenterSession(
             session_id=session_id,
             public_token=state.public_token,
-            webrtc=LivePresenterWebRTCConnection(video_out_enabled=False),
+            webrtc=LivePresenterWebRTCConnection(video_out_enabled=True),
             state='connecting',
             openai_ready=bool(os.getenv('OPENAI_API_KEY')),
             video_ready=True,

@@ -308,8 +308,7 @@ export async function connectPipecatSession(options: PipecatSessionOptions): Pro
         } catch {}
         audioEl.srcObject = null;
         if (avatarVideoEl) avatarVideoEl.srcObject = null;
-        if (avatarVideoEl) avatarVideoEl.srcObject = null;
-      audioEl.remove();
+        audioEl.remove();
         connected = false;
         setStatus('disconnected');
       },
